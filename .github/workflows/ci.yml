@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install project and dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install --group dev
+
+      - name: Format (black)
+        run: black --check .
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Types (mypy)
+        run: mypy .
+
+      - name: Security (bandit)
+        run: bandit -r src -q
+
+      - name: Dependencies (pip-audit)
+        run: pip-audit
+
+      # Cross-platform gate: the live tests need a real MWDB instance, so the
+      # offline suite runs here without the 100% coverage gate. The full suite
+      # (including live tests and the 100% gate) runs in the coverage job below.
+      - name: Tests (offline suite)
+        run: pytest -k "not live" --cov-fail-under=0
+
+  coverage:
+    name: Live coverage
+    runs-on: ubuntu-latest
+    # Skip on pull requests from forks, which do not receive the secret.
+    if: >-
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      MWDB_API_KEY: ${{ secrets.MWDB_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install project and dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install --group dev
+
+      # Full suite against the live MWDB instance, enforcing 100% coverage
+      # (the --cov-fail-under=100 default from pyproject.toml).
+      - name: Tests (full suite, 100% coverage)
+        run: pytest

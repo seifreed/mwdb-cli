@@ -1,0 +1,47 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    # OIDC trusted publishing: no API token or secret is used. Configure the
+    # trusted publisher on PyPI (project mwdb-cli -> Publishing) for this repo,
+    # workflow publish.yml and environment pypi.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/mwdb-cli
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish via OIDC trusted publishing
+        uses: pypa/gh-action-pypi-publish@release/v1
